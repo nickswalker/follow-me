@@ -5,14 +5,17 @@ from watchdog.events import PatternMatchingEventHandler
 
 class GitCommittingEventHandler(PatternMatchingEventHandler):
 
-    def __init__(self, repo, remote):
+    def __init__(self, repo, remote, no_push=False, modification_debounce=20, baseline_timer=60):
         super().__init__()
         self.repo = repo
         self.remote = remote
         self.modifications_timer = None
         self.modifications = []
-        self.baseline_timer = Timer(60.0, self._baseline_expired)
+        self.baseline_timer_period = baseline_timer
+        self.modification_debounce = modification_debounce
+        self.baseline_timer = Timer(baseline_timer, self._baseline_expired)
         self.commit_hashes = []
+        self.no_push = no_push
 
     def process(self, event):
         """
@@ -25,7 +28,7 @@ class GitCommittingEventHandler(PatternMatchingEventHandler):
         """
         if self.modifications_timer:
             self.modifications_timer.cancel()
-        self.modifications_timer = Timer(20.0, self._modifications_timer_expired)
+        self.modifications_timer = Timer(self.modification_debounce, self._modifications_timer_expired)
         self.modifications_timer.start()
 
         self.modifications.append(os.path.abspath(event.src_path))
@@ -53,16 +56,20 @@ class GitCommittingEventHandler(PatternMatchingEventHandler):
             return
         self.repo.index.add(to_commit)
         commit = self.repo.index.commit("Automated commit")
-        self.remote.push()
+        if not self.no_push:
+            self.remote.push()
+            print("Pushed " + str(commit)[:10])
+        else:
+            print("New commit " + str(commit)[:10])
         self.commit_hashes.append(commit)
-        print("Pushed " + str(commit)[:10])
+
 
     def _modifications_timer_expired(self):
         self.baseline_timer.cancel()
 
         self.commitandpush()
         self.modifications_timer = None
-        self.baseline_timer = Timer(60.0, self._baseline_expired)
+        self.baseline_timer = Timer(self.baseline_timer_period, self._baseline_expired)
         self.baseline_timer.start()
 
     def _baseline_expired(self):
@@ -70,5 +77,5 @@ class GitCommittingEventHandler(PatternMatchingEventHandler):
             self.modifications_timer.cancel()
             self.modifications_timer = None
         self.commitandpush()
-        self.baseline_timer = Timer(60.0, self._baseline_expired)
+        self.baseline_timer = Timer(self.baseline_timer_period, self._baseline_expired)
         self.baseline_timer.start()
