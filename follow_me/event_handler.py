@@ -1,11 +1,11 @@
-from threading import Timer
 import os
+from threading import Timer
+
 from watchdog.events import PatternMatchingEventHandler
 
 
 class GitCommittingEventHandler(PatternMatchingEventHandler):
-
-    def __init__(self, repo, remote, no_push=False, modification_debounce=20, baseline_timer=60):
+    def __init__(self, repo, remote, no_push=False, modification_debounce=20, baseline_timer=60, force_all=False):
         super().__init__()
         self.repo = repo
         self.remote = remote
@@ -14,8 +14,10 @@ class GitCommittingEventHandler(PatternMatchingEventHandler):
         self.baseline_timer_period = baseline_timer
         self.modification_debounce = modification_debounce
         self.baseline_timer = Timer(baseline_timer, self._baseline_expired)
+        self.baseline_timer.start()
         self.commit_hashes = []
         self.no_push = no_push
+        self.force_all = force_all
 
     def process(self, event):
         """
@@ -52,9 +54,13 @@ class GitCommittingEventHandler(PatternMatchingEventHandler):
     def commitandpush(self):
         to_commit = [mod for mod in self.modifications if self._filter_modification(mod)]
         self.modifications = []
-        if len(to_commit) == 0:
-            return
-        self.repo.index.add(to_commit)
+        if self.force_all:
+            self.repo.git.add(all=True)
+        else:
+            if len(to_commit) == 0:
+                return
+            self.repo.index.add(to_commit)
+
         commit = self.repo.index.commit("Automated commit")
         if not self.no_push:
             self.remote.push()
@@ -62,7 +68,6 @@ class GitCommittingEventHandler(PatternMatchingEventHandler):
         else:
             print("New commit " + str(commit)[:10])
         self.commit_hashes.append(commit)
-
 
     def _modifications_timer_expired(self):
         self.baseline_timer.cancel()

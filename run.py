@@ -1,15 +1,16 @@
+import argparse
+import os
+import sys
 import tempfile
 import time
-import sys
-import os
-from watchdog.observers import Observer
+from subprocess import call
 
-import argparse
 from git import Repo, InvalidGitRepositoryError
+from watchdog.observers import Observer
 
 from follow_me.event_handler import GitCommittingEventHandler
 from follow_me.util import query_yes_no
-from subprocess import call
+
 
 def validate_repo(path, remote_name):
     try:
@@ -58,8 +59,8 @@ def squash_session(repo, commits):
     message = get_commit_message(b"Follow Me session\n# Enter a commit message")
     repo.git.commit(m=message)
 
-def get_commit_message(initial_message=b""):
 
+def get_commit_message(initial_message=b""):
     EDITOR = os.environ.get('EDITOR', 'nano')
 
     with tempfile.NamedTemporaryFile(suffix=b".tmp", mode="w+b") as tf:
@@ -78,6 +79,7 @@ def get_commit_message(initial_message=b""):
     lines = [line.strip() for line in lines if not line.strip().startswith("#")]
     return "\n".join(lines)
 
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -86,6 +88,7 @@ def main():
     parser.add_argument("--no-push", action='store_true', default=False)
     parser.add_argument("--modification-debounce", type=int, default=20)
     parser.add_argument("--baseline-timer", type=int, default=60)
+    parser.add_argument("--force-all", action='store_true', default=False)
     args = parser.parse_args()
 
     abs_path = os.path.abspath(args.path)
@@ -96,7 +99,9 @@ def main():
     repo, remote = validate_repo(abs_path, args.remote)
 
     handler = GitCommittingEventHandler(repo, remote, no_push=args.no_push,
-                                        modification_debounce=args.modification_debounce, baseline_timer=args.baseline_timer)
+                                        modification_debounce=args.modification_debounce,
+                                        baseline_timer=args.baseline_timer,
+                                        force_all=args.force_all)
     observer = Observer()
     observer.schedule(handler, path=abs_path)
     observer.start()
